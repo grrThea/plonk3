@@ -1,3 +1,4 @@
+
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -36,8 +37,10 @@ where
     #[cfg(debug_assertions)]
     crate::check_constraints::check_constraints(air, &trace);
 
-    let degree = trace.height();
-    let log_degree = log2_strict_usize(degree);
+    let degree = trace.height(); 
+    
+    let log_degree = log2_strict_usize(degree); 
+    
 
     let log_quotient_degree = get_log_quotient_degree::<Val<SC>, A>(air);
     let quotient_degree = 1 << log_quotient_degree;

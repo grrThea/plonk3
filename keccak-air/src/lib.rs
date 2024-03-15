@@ -10,6 +10,7 @@ mod constants;
 mod generation;
 mod logic;
 mod round_flags;
+mod fib;
 
 pub use air::*;
 pub use columns::*;

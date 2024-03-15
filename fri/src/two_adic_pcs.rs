@@ -101,9 +101,11 @@ where
         &self,
         evaluations: Vec<(Self::Domain, RowMajorMatrix<Val>)>,
     ) -> (Self::Commitment, Self::ProverData) {
+           // vec<RowMajorMatrix<Val>>
         let ldes: Vec<RowMajorMatrix<Val>> = evaluations
             .into_iter()
             .map(|(domain, evals)| {
+                // evals.height(): 1024
                 assert_eq!(domain.size(), evals.height());
                 let log_n = log2_strict_usize(domain.size());
                 assert!(log_n <= self.log_n);

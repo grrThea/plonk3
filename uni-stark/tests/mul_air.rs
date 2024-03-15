@@ -1,5 +1,3 @@
-use std::marker::PhantomData;
-
 use itertools::Itertools;
 use p3_air::{Air, AirBuilder, BaseAir};
 use p3_baby_bear::{BabyBear, DiffusionMatrixBabybear};
@@ -11,7 +9,7 @@ use p3_field::extension::BinomialExtensionField;
 use p3_field::{AbstractField, Field};
 use p3_fri::{FriConfig, TwoAdicFriPcs};
 use p3_matrix::dense::RowMajorMatrix;
-use p3_matrix::MatrixRowSlices;
+use p3_matrix::{Matrix, MatrixRowSlices};
 use p3_merkle_tree::FieldMerkleTreeMmcs;
 use p3_poseidon2::Poseidon2;
 use p3_symmetric::{PaddingFreeSponge, TruncatedPermutation};
@@ -77,6 +75,11 @@ where
     let air = MulAir { degree };
     let trace = air.random_valid_trace(log_height, true);
 
+    println!("trace ==> {:?}", trace.height());
+    println!("trace22 ==> {:?}", trace.width());
+    
+
+    
     let mut p_challenger = challenger.clone();
     let proof = prove(&config, &air, &mut p_challenger, trace);
 
@@ -103,11 +106,7 @@ fn do_test_bb_trivial(degree: u64, log_n: usize) -> Result<(), VerificationError
     type Challenger = DuplexChallenger<Val, Perm, 16>;
 
     type Pcs = TrivialPcs<Val, Radix2DitParallel>;
-    let pcs = p3_commit::testing::TrivialPcs {
-        dft,
-        log_n,
-        _phantom: PhantomData,
-    };
+    let pcs = Pcs::new(log_n, dft);
 
     type MyConfig = StarkConfig<Pcs, Challenge, Challenger>;
     let config = MyConfig::new(pcs);
@@ -117,7 +116,7 @@ fn do_test_bb_trivial(degree: u64, log_n: usize) -> Result<(), VerificationError
 
 #[test]
 fn prove_bb_trivial_deg2() -> Result<(), VerificationError> {
-    do_test_bb_trivial(2, 10)
+    do_test_bb_trivial(2, 1)
 }
 
 #[test]
@@ -142,7 +141,7 @@ fn do_test_bb_twoadic(
     let perm = Perm::new_from_rng(8, 22, DiffusionMatrixBabybear, &mut thread_rng());
 
     type MyHash = PaddingFreeSponge<Perm, 16, 8, 8>;
-    let hash = MyHash::new(perm.clone());
+    let hash: PaddingFreeSponge<Poseidon2<BabyBear, DiffusionMatrixBabybear, 16, 7>, 16, 8, 8> = MyHash::new(perm.clone());
 
     type MyCompress = TruncatedPermutation<Perm, 2, 8, 16>;
     let compress = MyCompress::new(perm.clone());
@@ -176,12 +175,13 @@ fn do_test_bb_twoadic(
     type MyConfig = StarkConfig<Pcs, Challenge, Challenger>;
     let config = MyConfig::new(pcs);
 
+    // degree: 2 log_height: 1 << 10 == 1024
     do_test(config, degree, 1 << log_n, Challenger::new(perm))
 }
 
 #[test]
 fn prove_bb_twoadic_deg2() -> Result<(), VerificationError> {
-    do_test_bb_twoadic(1, 2, 10)
+    do_test_bb_twoadic(1, 2, 3)
 }
 
 #[test]

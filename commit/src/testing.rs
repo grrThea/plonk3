@@ -13,11 +13,27 @@ use serde::{Deserialize, Serialize};
 use crate::{OpenedValues, Pcs, PolynomialSpace, TwoAdicMultiplicativeCoset};
 
 /// A trivial PCS: its commitment is simply the coefficients of each poly.
-pub struct TrivialPcs<Val: TwoAdicField, Dft: TwoAdicSubgroupDft<Val>> {
-    pub dft: Dft,
-    // degree bound
-    pub log_n: usize,
-    pub _phantom: PhantomData<Val>,
+// pub struct TrivialPcs<Val: TwoAdicField, Dft: TwoAdicSubgroupDft<Val>> {
+//     pub dft: Dft,
+//     // degree bound
+//     pub log_n: usize,
+//     pub _phantom: PhantomData<Val>,
+// }
+
+pub struct TrivialPcs<Val, Dft> {
+    dft: Dft,
+    log_n: usize,
+    _phantom: PhantomData<Val>,
+}
+
+impl <Val, Dft> TrivialPcs<Val, Dft> {
+    pub fn new(log_n: usize, dft: Dft) -> Self {
+        Self {
+            log_n,
+            dft,
+            _phantom: PhantomData,
+        }
+    }
 }
 
 pub fn eval_coeffs_at_pt<F: Field, EF: ExtensionField<F>>(
@@ -67,6 +83,8 @@ where
             .map(|(domain, evals)| {
                 let log_domain_size = log2_strict_usize(domain.size());
                 // for now, only commit on larger domain than natural
+                // println!("{:?}", log_domain_size);
+
                 assert!(log_domain_size >= self.log_n);
                 assert_eq!(domain.size(), evals.height());
                 // coset_idft_batch
