@@ -51,6 +51,7 @@ impl<AB: AirBuilder> Air<AB> for MulAir {
     fn eval(&self, builder: &mut AB) {
         let main = builder.main();
         let main_local = main.row_slice(0);
+        let next_local = main.row_slice(1);
 
         for i in 0..REPETITIONS {
             let start = i * 3;
