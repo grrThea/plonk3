@@ -80,96 +80,43 @@ impl RlpAir {
         println!("rlp_values: {:?}", rlp_values);
         let rlp_res = match rlp_values {
           Some(RlpValue::String(bytes)) => bytes.to_vec(),
-          Some(RlpValue::List(bytes)) => bytes.into_iter().flat_map(Vec::<u8>::from).collect(),
+          // Some(RlpValue::List(bytes)) => bytes.into_iter().flat_map(Vec::<u8>::from).collect(),
+          Some(RlpValue::List(bytes)) => bytes.into_iter().flat_map(|rlp_value| {
+            match rlp_value {
+              RlpValue::String(data) => {
+                  let mut vec = data.to_vec();
+                  let max_width = 8;
+                  for _ in 0..max_width - data.len() {
+                      vec.push(0);
+                  }
+                  vec
+              },
+              _ => todo!() // Handle other types if needed
+          }
+          }).collect(),
           None => todo!(),
         }; 
 
+        println!("rlp_res: {:?}", rlp_res);
+   
         for (i, v) in rlp_res.iter().enumerate() {
+          trace_values[i] = F::from_canonical_u8(*v);
+        } 
+        println!("trace_values: {:?}", trace_values);
 
-        }
-
-        // let mut j = 0;
-        // let remain = vec![0;rlp_res.len()];
-        // let values = vec![0;num_rows];
-        // while j < 3 * 2 {
-        //   let r = remain[j..j+3];
-        //   values.into_iter().chain(&remain.into_iter());
-        //   j+=3;
-        // }
-
-        // let r = vec![0;20];
-        // let a = vec![1,2,3,4,5,6,7,8,9];
-        // let b = vec![1,2,3,0,4,5,6,0,7,8,9,0,0,0,0,0];
-
-        // let values = vec![0;num_rows];
-        // let res = insert_with_padding(values, &rlp_res, 3, 0);
-        // println!("res: {:?}", res);
-
-        let mut r = vec![0; 20];
-        let a = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
-        let pad_every = 3;
-        let pad_value = 0;
-
-        insert_with_padding(&mut r, &a, pad_every, pad_value);
-
-        println!("rs: {:?}", r);
-        // for (i, v) in rlp_res.iter().enumerate() {
-        //   trace_values[i] = F::from_canonical_u8(*v);
-        // } 
-        // println!("trace_values: {:?}", trace_values);
-
-        // let mut trace_items: Vec<F> = vec![F::zero();num_rows];
-        // for mut i in 0..rlp_res.len(){
-        //   trace_items[i] = F::from_canonical_u8(rlp_res[i]);
-        //   i+=4;
-        // }
-        // println!("trace_item: {:?}", trace_items);
-
-        // let trace = vec![vec![F::zero();3];2];
-        // let mut trace: Vec<Vec<F>> = vec![vec![F::zero();3];2];
-        // for (i, v) in rlp_res.iter().enumerate() {
-        //   if i < 3 {
-        //     trace[0][i]=F::from_canonical_u8(*v);
-        //   } else {
-        //     trace[1][i-3]=F::from_canonical_u8(*v);
-        //   }
-        // } 
-
-        // println!("tracetrace: {:?}", trace);
-
-        RowMajorMatrix::new(trace_values, 4)
+    
+        RowMajorMatrix::new(trace_values, 8)
     }
 }
 
-fn insert_with_padding<T: Copy>(r: &mut Vec<T>, a: &[T], pad_every: usize, pad_value: T) {
-  let mut remain = a;
-  for (i, &element) in remain.iter().enumerate() {
-    r[i] = element;
-    if i % pad_every == 0 {
-      r[i] = pad_value;
-      remain = &a[1+i..];
+fn pad0(array: &[u8], n: usize) -> Vec<u8> {
+  let mut result = Vec::with_capacity(n);
+    let len = array.len();
+    result.extend_from_slice(array);
+    if len < n {
+        result.resize(n, 0);
     }
-  }
-  // let mut index = 0;
-  // // let mut pad_counter = 0;
-
-  // while index < a.len() {
-  //     // 插入a中的元素
-  //     r[index] = a[index];
-
-  //     // 更新计数器
-  //     // pad_counter += 1;
-      
-
-  //     // println!("???: {}, {}", index, index % pad_every);
-  //     index += 1;
-  //     // 检查是否需要插入0
-  //     if index % pad_every == 0 && index < a.len() {
-  //       println!("indx: {}", index);
-  //       r[index] = pad_value;
-  //     }
-      
-  // }
+    result
 }
 
 fn decode_rlp_internal(data: &[u8]) -> Option<(RlpValue, &[u8])> {
@@ -238,7 +185,7 @@ fn decode_length(data: &[u8]) -> Option<usize> {
 
 impl<F> BaseAir<F> for RlpAir {
     fn width(&self) -> usize {
-        4
+        8
     }
 }
 
@@ -247,11 +194,11 @@ impl<AB: AirBuilder> Air<AB> for RlpAir {
 
         let main: <AB as AirBuilder>::M = builder.main();
         let local = main.row_slice(0);
-        let next = main.row_slice(1);
-        println!("len: {:?}", local.len());
-
+        println!("len: {:?}", &local[0..3].clone());
         println!("local: {:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?}", local[0].into(),local[1].into(),local[2].into(),local[3].into(),local[4].into(),local[5].into(),local[6].into(),local[7].into());
         println!("-------------------------------");
+
+        // builder.when_first_row().assert_eq(local[0..3].to_vec(), [1,2,3])
         // builder.when_first_row().assert_one(local[0]);
         // builder.when_first_row().assert_one(local[1]);
         // builder.when_transition().assert_eq(local[0]+local[1], next[0]);
