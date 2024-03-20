@@ -171,6 +171,5 @@ fn main() -> Result<(), VerificationError> {
 
     let mut challenger = Challenger::new(perm);
     verify(&config, &FibonacciAir::default(), &mut challenger, &proof)
-    // // 1,1,2,3,5,8,13,21,34,55,89
 }
 
