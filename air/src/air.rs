@@ -1,6 +1,6 @@
 use core::ops::{Add, Mul, Sub};
 
-use p3_field::{AbstractExtensionField, AbstractField, ExtensionField, Field};
+use p3_field::{AbstractExtensionField, AbstractField, ExtensionField, Field, PrimeField64, PrimeField};
 use p3_matrix::dense::RowMajorMatrix;
 use p3_matrix::MatrixRowSlices;
 
@@ -26,7 +26,7 @@ pub trait AirBuilder: Sized {
         + From<Self::F>
         + Add<Self::Var, Output = Self::Expr>
         + Add<Self::F, Output = Self::Expr>
-        + Sub<Self::Var, Output = Self::Expr>
+        + Sub <Self::Var, Output = Self::Expr>
         + Sub<Self::F, Output = Self::Expr>
         + Mul<Self::Var, Output = Self::Expr>
         + Mul<Self::F, Output = Self::Expr>;
@@ -112,7 +112,7 @@ pub trait PairBuilder: AirBuilder {
     fn preprocessed(&self) -> Self::M;
 }
 
-pub trait ExtensionBuilder: AirBuilder {
+pub trait ExtensionBuilder: AirBuilder { 
     type EF: ExtensionField<Self::F>;
 
     type ExprEF: AbstractExtensionField<Self::Expr, F = Self::EF>;
@@ -153,6 +153,7 @@ pub struct FilteredAirBuilder<'a, AB: AirBuilder> {
     pub inner: &'a mut AB,
     condition: AB::Expr,
 }
+
 
 impl<'a, AB: AirBuilder> AirBuilder for FilteredAirBuilder<'a, AB> {
     type F = AB::F;

@@ -1,19 +1,16 @@
-use itertools::Itertools;
+use std::borrow::Borrow;
+use core::mem::{size_of, transmute};
+use std::usize;
 use p3_baby_bear::{BabyBear, DiffusionMatrixBabybear};
-use core::mem::{size_of};
-use std::arch::x86_64::_CMP_LE_OQ;
-use std::clone;
-
 use p3_air::{Air, AirBuilder, BaseAir};
 use p3_challenger::DuplexChallenger;
 use p3_matrix::dense::RowMajorMatrix;
 use p3_dft::Radix2DitParallel;
 use p3_field::extension::BinomialExtensionField;
-use p3_field::{Field, PackedValue, PrimeField64};
+use p3_field::{exp_u64_by_squaring, AbstractExtensionField, AbstractField, ExtensionField, Field, PrimeField, PrimeField32, PrimeField64};
 use p3_matrix::{Matrix, MatrixRowSlices};
 use p3_poseidon2::Poseidon2;
-use p3_uni_stark::{prove, verify, StarkConfig, StarkGenericConfig, Val, VerificationError};
-use rand::distributions::{Distribution, Standard};
+use p3_uni_stark::{prove, verify, StarkConfig, VerificationError};
 use rand::thread_rng;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -26,6 +23,22 @@ use p3_commit::ExtensionMmcs;
 use p3_fri::{FriConfig, TwoAdicFriPcs};
 use p3_util::log2_ceil_usize;
 
+
+struct TestPlpCol<T> {
+  pub a: [T;3],
+  pub b: [T;3],
+}
+
+impl<T> Borrow<TestPlpCol<T>> for [T] {
+  fn borrow(&self) -> &TestPlpCol<T> {
+      debug_assert_eq!(self.len(), NUM_RLP_COLS);
+      let (prefix, shorts, suffix) = unsafe { self.align_to::<TestPlpCol<T>>() };
+      debug_assert!(prefix.is_empty(), "Alignment should match");
+      debug_assert!(suffix.is_empty(), "Alignment should match");
+      debug_assert_eq!(shorts.len(), 1);
+      &shorts[0]
+  }
+}
 
 pub struct RlpAir {
   n: u64,
@@ -41,7 +54,6 @@ impl Default for RlpAir {
     }
 }
 
-const NUM_RLP_ROWS: usize = 128;
 
 #[derive(Debug)]
 enum RlpValue<'a> {
@@ -60,63 +72,51 @@ impl<'a> From<RlpValue<'a>> for Vec<u8> {
   }
 }
 
+const MAX_WIDTH:usize = 8;
+const NUM_RLP_ROWS: usize = 128;
+pub(crate) const NUM_RLP_COLS: usize = size_of::<TestPlpCol<u8>>();
+
+const R:u8 = 2;
 
 impl RlpAir {
     pub fn random_valid_trace<F: PrimeField64>(&self) -> RowMajorMatrix<F>
     {
-        let degree = 1;
-        let num_rows = NUM_RLP_ROWS * degree;
-        let mut trace_values: Vec<F> = vec![F::zero(); num_rows];
-
+       
         let rlp_values = decode_rlp_internal(&self.rlp_array).map(|(value, _)| value);
-
-
-        // let a: Vec<_> = match rlp_values {
-        //   Some(RlpValue::List(bytes)) => bytes.into_iter().map(|by| {by}).collect_vec(),
-        //   Some(RlpValue::String(bytes)) => bytes.to_vec(),
-        //   None => todo!(),
-        // };
-
-        println!("rlp_values: {:?}", rlp_values);
-        let rlp_res = match rlp_values {
-          Some(RlpValue::String(bytes)) => bytes.to_vec(),
-          // Some(RlpValue::List(bytes)) => bytes.into_iter().flat_map(Vec::<u8>::from).collect(),
-          Some(RlpValue::List(bytes)) => bytes.into_iter().flat_map(|rlp_value| {
+        let mut trace = RowMajorMatrix::new(vec![F::zero(); MAX_WIDTH * 2], MAX_WIDTH);
+        
+        let rlp_res:Vec::<u64> = match rlp_values {
+          Some(RlpValue::String(bytes)) => bytes.into_iter().map(|&x| x as u64).collect(),
+          Some(RlpValue::List(bytes)) => bytes.into_iter().map(|rlp_value| {
             match rlp_value {
               RlpValue::String(data) => {
-                  let mut vec = data.to_vec();
-                  let max_width = 8;
-                  for _ in 0..max_width - data.len() {
-                      vec.push(0);
+                  let mut res:Vec<u64> = Vec::new();
+                  res = data.iter().map(|&x| x as u64).collect();
+                  if res.len() < MAX_WIDTH {
+                    res.resize(MAX_WIDTH, 0);
                   }
-                  vec
+
+                  let rlc: u64 = data.iter().enumerate().map(|(i, &x)| x as u64 * R.pow(i as u32) as u64).sum();
+
+                  res[MAX_WIDTH-2] = data.len() as u64;
+                  res[MAX_WIDTH-1] = rlc;
+                 
+                  res
               },
-              _ => todo!() // Handle other types if needed
+              _ => todo!() 
           }
-          }).collect(),
+          }).flat_map(Vec::<u64>::from).collect(),
           None => todo!(),
         }; 
 
-        println!("rlp_res: {:?}", rlp_res);
-   
         for (i, v) in rlp_res.iter().enumerate() {
-          trace_values[i] = F::from_canonical_u8(*v);
+          trace.values[i] = F::from_canonical_u64(*v);
         } 
-        println!("trace_values: {:?}", trace_values);
 
-    
-        RowMajorMatrix::new(trace_values, 8)
+        println!("rlp_res=> {:?}", rlp_res);
+        
+        trace
     }
-}
-
-fn pad0(array: &[u8], n: usize) -> Vec<u8> {
-  let mut result = Vec::with_capacity(n);
-    let len = array.len();
-    result.extend_from_slice(array);
-    if len < n {
-        result.resize(n, 0);
-    }
-    result
 }
 
 fn decode_rlp_internal(data: &[u8]) -> Option<(RlpValue, &[u8])> {
@@ -185,7 +185,7 @@ fn decode_length(data: &[u8]) -> Option<usize> {
 
 impl<F> BaseAir<F> for RlpAir {
     fn width(&self) -> usize {
-        8
+      MAX_WIDTH
     }
 }
 
@@ -194,15 +194,35 @@ impl<AB: AirBuilder> Air<AB> for RlpAir {
 
         let main: <AB as AirBuilder>::M = builder.main();
         let local = main.row_slice(0);
-        println!("len: {:?}", &local[0..3].clone());
-        println!("local: {:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?}", local[0].into(),local[1].into(),local[2].into(),local[3].into(),local[4].into(),local[5].into(),local[6].into(),local[7].into());
+        let next = main.row_slice(1);
+
+        println!("local: {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?}", local[0].into(),local[1].into(),local[2].into(),local[3].into(),local[4].into(),local[5].into(),local[6].into(),local[7].into());
+        println!("next: {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?}", next[0].into(),next[1].into(),next[2].into(),next[3].into(),next[4].into(),next[5].into(),next[6].into(),next[7].into());
         println!("-------------------------------");
 
-        // builder.when_first_row().assert_eq(local[0..3].to_vec(), [1,2,3])
-        // builder.when_first_row().assert_one(local[0]);
-        // builder.when_first_row().assert_one(local[1]);
-        // builder.when_transition().assert_eq(local[0]+local[1], next[0]);
-        // builder.when_transition().assert_eq(local[1]+next[0], next[1]);
+        let local_acc = local.last();
+        let local_len = local[MAX_WIDTH-2];
+        let next_acc = next.last();
+        let next_len: <AB as AirBuilder>::Var = next[MAX_WIDTH-2];
+
+        let a = local_len.into();
+        
+        // let a = AB::F64::as_canonical_u64(next_len);
+        // let f = AB::Expr::as_canonical_u64(next_len);
+        // assert_eq!(f.as_canonical_u64(), 3);
+
+        // u64::from(next_len);
+
+        // let t =  exp_u64_by_squaring(AB::Expr::from_canonical_u8(R), next_len);
+        // let exp_u64 = next_len.into().exp_u64(2);
+        // println!("test: {:?}", test);
+        // let r = local_len.exp_power_of_2(R as usize);
+        // next_acc = next_rlc*R.pow(local_len as u32)
+        // let local_len = local[MAX_WIDTH-2];
+        // for i in 0..local_len {
+        //   local[i]
+        // }
+        // builder.when_transition()
     }
 }
 
@@ -246,22 +266,7 @@ fn main() -> Result<(), VerificationError> {
 
     type Challenger = DuplexChallenger<Val, Perm, 16>;
 
-    // "The length of this sentence is more than 55 bytes, I know it because I pre-designed it"
     let rlp_array = vec![200, 131, 97, 98, 99, 131, 100, 101, 102];
-    // let rlp_array =vec![248, 94, 131, 97, 98, 99, 248, 88, 179, 84, 104, 101, 32, 108, 101, 110, 103, 116, 104, 32, 111, 102, 32, 116, 104, 105, 115, 32, 115, 101, 110, 116, 101, 110, 99, 101, 32, 105, 115, 32, 109, 111, 114, 101, 32, 116, 104, 97, 110, 32, 53, 53, 32, 98, 121, 116, 101, 115, 44, 32, 163, 73, 32, 107, 110, 111, 119, 32, 105, 116, 32, 98, 101, 99, 97, 117, 115, 101, 32, 73, 32, 112, 114, 101, 45, 100, 101, 115, 105, 103, 110, 101, 100, 32, 105, 116];
-    // let rlp_array = vec![248, 88, 179, 84, 104, 101, 32, 108, 101, 110, 103, 116, 104, 32, 111, 102, 32, 116, 104, 105, 115, 32, 115, 101, 110, 116, 101, 110, 99, 101, 32, 105, 115, 32, 109, 111, 114, 101, 32, 116, 104, 97, 110, 32, 53, 53, 32, 98, 121, 116, 101, 115, 44, 32, 163, 73, 32, 107, 110, 111, 119, 32, 105, 116, 32, 98, 101, 99, 97, 117, 115, 101, 32, 73, 32, 112, 114, 101, 45, 100, 101, 115, 105, 103, 110, 101, 100, 32, 105, 116];
-
-    // let rlp_array = vec![184, 86, 84, 104, 101, 32, 108, 101, 110, 103, 116, 104, 32, 111, 102, 32, 116, 104, 105, 115, 32, 115, 101, 110, 116, 101, 110, 99, 101, 32, 105, 115, 32, 109, 111, 114, 101, 32, 116, 104, 97, 110, 32, 53, 53, 32, 98, 121, 116, 101, 115, 44, 32, 73, 32, 107, 110, 111, 119, 32, 105, 116, 32, 98, 101, 99, 97, 117, 115, 101, 32, 73, 32, 112, 114, 101, 45, 100, 101, 115, 105, 103, 110, 101, 100, 32, 105, 116];
-    // let rlp_hex: &str = "f902fc0182065c8405f5e1008507081595c083036aab943fc91a3afd70395cd496c647d5a6cc9d4b2b7fad8804fefa17b7240000b902843593564c000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000658e953300000000000000000000000000000000000000000000000000000000000000020b080000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000004fefa17b72400000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000004fefa17b72400000000000000000000000000000000000000000000000000251377f5225c886e5e00000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2000000000000000000000000269877f972622d3c293fca595c65cf34b7f527cec001a01a8d29640e538156649e5b8d9218a3d91cf866036b907ec5aa31ea69046954e5a002bed5d12542b88d2bb1ae8ba7e838ab75bacddb0aa44703e17de33f0f767ce1";
-    // let rlp_array = rlp_hex.to_owned().into_bytes();
-    // println!("rlp_array: {:?}", rlp_array);
-
-    // let rlp_array;
-    // let test = hex::decode("f902fc0182065c8405f5e1008507081595c083036aab943fc91a3afd70395cd496c647d5a6cc9d4b2b7fad8804fefa17b7240000b902843593564c000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000658e953300000000000000000000000000000000000000000000000000000000000000020b080000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000004fefa17b72400000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000004fefa17b72400000000000000000000000000000000000000000000000000251377f5225c886e5e00000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2000000000000000000000000269877f972622d3c293fca595c65cf34b7f527cec001a01a8d29640e538156649e5b8d9218a3d91cf866036b907ec5aa31ea69046954e5a002bed5d12542b88d2bb1ae8ba7e838ab75bacddb0aa44703e17de33f0f767ce1");
-    // match test {
-    //     Ok(data) => rlp_array = data,
-    //     Err(message) => panic!("{}", message),
-    // };
 
     println!("rlp_array: {:?}", rlp_array);
 

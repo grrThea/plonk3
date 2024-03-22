@@ -91,7 +91,6 @@ impl<F> BaseAir<F> for FibonacciAir {
 
 impl<AB: AirBuilder> Air<AB> for FibonacciAir {
     fn eval(&self, builder: &mut AB) {
-
         let main: <AB as AirBuilder>::M = builder.main();
         let local = main.row_slice(0);
         let next = main.row_slice(1);

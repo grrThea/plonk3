@@ -20,5 +20,13 @@
       "program": "${workspaceFolder}/target/debug/examples/prove_baby_bear_poseidon2",
       "cwd": "${workspaceFolder}",
     },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "rlp",
+      "args": [],
+      "program": "${workspaceFolder}/target/debug/examples/rlp",
+      "cwd": "${workspaceFolder}",
+    },
   ]
 }

@@ -98,7 +98,7 @@ impl Distribution<Goldilocks> for Standard {
 
 impl AbstractField for Goldilocks {
     type F = Self;
-
+    
     fn zero() -> Self {
         Self::new(0)
     }

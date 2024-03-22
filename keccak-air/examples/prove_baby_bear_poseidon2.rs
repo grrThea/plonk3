@@ -62,8 +62,8 @@ fn main() -> Result<(), VerificationError> {
 
     let inputs = (0..=1).map(|_| random()).collect::<Vec<_>>();
     println!("inputs: {:?}", inputs);
-    let trace = generate_trace_rows::<Val>(inputs);
-    // println!("trace: {:?}", trace);
+    let trace: p3_matrix::dense::RowMajorMatrix<BabyBear> = generate_trace_rows::<Val>(inputs);
+    println!("trace: {:?}", trace);
 
     let fri_config = FriConfig {
         log_blowup: 1,

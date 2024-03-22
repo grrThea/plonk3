@@ -21,7 +21,7 @@ pub fn generate_trace_rows<F: PrimeField64>(inputs: Vec<[u64; 25]>) -> RowMajorM
     assert!(suffix.is_empty(), "Alignment should match");
     assert_eq!(rows.len(), num_rows);
 
-    let padded_inputs = inputs.into_iter().chain(iter::repeat([0; 25]));
+    let padded_inputs: iter::Chain<vec::IntoIter<[u64; 25]>, iter::Repeat<[u64; 25]>> = inputs.into_iter().chain(iter::repeat([0; 25]));
     for (row, input) in rows.chunks_mut(NUM_ROUNDS).zip(padded_inputs) {
         generate_trace_rows_for_perm(row, input);
     }

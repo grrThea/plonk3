@@ -1,5 +1,5 @@
 use p3_air::{Air, AirBuilder, TwoRowMatrixView};
-use p3_field::Field;
+use p3_field::{Field, PrimeField64};
 use p3_matrix::dense::RowMajorMatrix;
 use p3_matrix::{Matrix, MatrixRowSlices};
 use tracing::instrument;

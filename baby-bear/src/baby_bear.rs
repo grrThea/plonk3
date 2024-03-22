@@ -153,6 +153,8 @@ impl AbstractField for BabyBear {
         Self::from_wrapped_u32(n)
     }
 
+    
+
     #[inline]
     fn from_canonical_u64(n: u64) -> Self {
         debug_assert!(n < P as u64);

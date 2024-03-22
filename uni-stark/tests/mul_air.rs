@@ -49,6 +49,8 @@ impl<F> BaseAir<F> for MulAir {
 
 impl<AB: AirBuilder> Air<AB> for MulAir {
     fn eval(&self, builder: &mut AB) {
+        let mut typ: <AB as AirBuilder>::Expr = AB::Expr::from_canonical_u16(2);
+
         let main = builder.main();
         let main_local = main.row_slice(0);
 
