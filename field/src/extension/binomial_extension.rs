@@ -3,7 +3,7 @@ use alloc::string::ToString;
 use core::array;
 use core::fmt::{self, Debug, Display, Formatter};
 use core::iter::{Product, Sum};
-use core::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
+use core::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Shr, Sub, SubAssign};
 
 use itertools::Itertools;
 use rand::distributions::Standard;

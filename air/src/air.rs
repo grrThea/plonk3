@@ -1,4 +1,4 @@
-use core::ops::{Add, Mul, Sub};
+use core::ops::{Add, Mul, Shr, ShrAssign, Sub};
 
 use p3_field::{AbstractExtensionField, AbstractField, ExtensionField, Field, PrimeField64, PrimeField};
 use p3_matrix::dense::RowMajorMatrix;
@@ -30,6 +30,8 @@ pub trait AirBuilder: Sized {
         + Sub<Self::F, Output = Self::Expr>
         + Mul<Self::Var, Output = Self::Expr>
         + Mul<Self::F, Output = Self::Expr>;
+        
+
 
     type Var: Into<Self::Expr>
         + Copy
