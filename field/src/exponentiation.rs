@@ -13,22 +13,6 @@ pub fn exp_u64_by_squaring<AF: AbstractField>(val: AF, power: u64) -> AF {
     product
 }
 
-// pub fn exp_u64_by_squaring2<AF: AbstractField>(val: u64, power: AF) -> AF {
-//     let mut current = val;
-//     let mut product = AF::one();
-
-//     let a: Result<_, _> = AF::try_into(power);
-    
-
-//     for j in 0..bits_u64(power) {
-//         if (power >> j & 1) != 0 {
-//             product *= current.clone();
-//         }
-//         current = current.square();
-//     }
-//     product
-// }
-
 const fn bits_u64(n: u64) -> usize {
     (64 - n.leading_zeros()) as usize
 }

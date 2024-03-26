@@ -1,5 +1,4 @@
 use std::borrow::Borrow;
-use core::mem::{size_of, transmute};
 use std::usize;
 use itertools::Itertools;
 use p3_baby_bear::{BabyBear, DiffusionMatrixBabybear};
@@ -8,7 +7,7 @@ use p3_challenger::DuplexChallenger;
 use p3_matrix::dense::RowMajorMatrix;
 use p3_dft::Radix2DitParallel;
 use p3_field::extension::BinomialExtensionField;
-use p3_field::{AbstractExtensionField, AbstractField, ExtensionField, Field, PackedValue, PrimeField, PrimeField32, PrimeField64};
+use p3_field::{AbstractField, Field, PrimeField64};
 use p3_matrix::{Matrix, MatrixRowSlices};
 use p3_poseidon2::Poseidon2;
 use p3_uni_stark::{prove, verify, StarkConfig, VerificationError};
@@ -23,23 +22,6 @@ use p3_merkle_tree::FieldMerkleTreeMmcs;
 use p3_commit::ExtensionMmcs;
 use p3_fri::{FriConfig, TwoAdicFriPcs};
 use p3_util::log2_ceil_usize;
-
-
-struct TestPlpCol<T> {
-  pub a: [T;3],
-  pub b: [T;3],
-}
-
-impl<T> Borrow<TestPlpCol<T>> for [T] {
-  fn borrow(&self) -> &TestPlpCol<T> {
-      debug_assert_eq!(self.len(), NUM_RLP_COLS);
-      let (prefix, shorts, suffix) = unsafe { self.align_to::<TestPlpCol<T>>() };
-      debug_assert!(prefix.is_empty(), "Alignment should match");
-      debug_assert!(suffix.is_empty(), "Alignment should match");
-      debug_assert_eq!(shorts.len(), 1);
-      &shorts[0]
-  }
-}
 
 pub struct RlpAir {
   n: u64,
@@ -73,13 +55,10 @@ impl<'a> From<RlpValue<'a>> for Vec<u8> {
   }
 }
 
-const R:u8 = 3;
+const R:u8 = 2;
 const RLP_LENGTH:usize = 8;
 const RLP_WIDTH:usize = 8;
 const MAX_WIDTH:usize = RLP_WIDTH + RLP_LENGTH;
-
-pub(crate) const NUM_RLP_COLS: usize = size_of::<TestPlpCol<u8>>();
-
 
 impl RlpAir {
     pub fn random_valid_trace<F: PrimeField64>(&self) -> RowMajorMatrix<F>
@@ -90,20 +69,17 @@ impl RlpAir {
         
         let rlp_res:Vec::<u64> = match rlp_values {
           Some(RlpValue::String(bytes)) => bytes.into_iter().map(|&x| x as u64).collect(),
-          Some(RlpValue::List(bytes)) => bytes.into_iter().map(|rlp_value| {
-            match rlp_value {
-              RlpValue::String(data) => {
-                  let mut res:Vec<u64> = Vec::new();
-                  res = data.iter().map(|&x| x as u64).collect();
+          Some(RlpValue::List(bytes)) => {
+            let rlp_arr:Vec<Vec<u8>> = bytes.into_iter().map(|rlp_value| {
+              match rlp_value {
+                RlpValue::String(data) => {
+                  let mut len = data.len() as u8;
+                  let mut res:Vec<u8> = Vec::new();
+                  res = data.iter().map(|&x|x).collect();
                   if res.len() < RLP_WIDTH {
                     res.resize(RLP_WIDTH, 0);
                   }
-
-                  let rlc: u64 = data.iter().enumerate().map(|(i, &x)| x as u64 * R.pow(i as u32) as u64).sum();
-                  res[RLP_WIDTH-1] = rlc;
-                  
-                  let mut len = data.len() as u64;
-                  let mut binary_len: Vec<u64> = Vec::new();
+                  let mut binary_len: Vec<u8> = Vec::new();
                   while len > 0 {
                     binary_len.push(len % 2);
                     len /= 2;
@@ -112,21 +88,44 @@ impl RlpAir {
                     binary_len.resize(RLP_LENGTH, 0);
                   }
 
-                //  let padded_res res.into_iter().chain(binary_len.into_iter());
-                let concatenated_array = [res, binary_len].concat(); // 使用 + 运算符连接两个数组
-                return concatenated_array;
-                  // return res.extend(&binary_len)
-              },
-              _ => todo!() 
+                  res.extend(binary_len);
+                  res
+                },
+                _ => todo!()
+            }}).collect_vec();
+
+            let mut rlc_arr: Vec<Vec<u64>> = Vec::new();
+            for i in 0..rlp_arr.len() {
+              
+              let rlp = rlp_arr[i][0..RLP_WIDTH-1].to_vec();
+              let rlc: u64 = rlp.iter().enumerate().map(|(i, &x)| x as u64 * R.pow(i as u32) as u64).sum();
+
+              let mut rlc_subarr: Vec<u64> = Vec::new();
+              rlc_subarr.extend(rlp_arr[i].iter().map(|&x| x as u64));
+
+              if i == 0 {
+                rlc_subarr[RLP_WIDTH-1] = rlc;
+              } else {
+                  let real_len = bits2u64(rlc_arr[i-1][RLP_WIDTH..].to_vec());
+                  let m = R.pow(real_len as u32) as u64;
+                  let product = rlc * m + rlc_arr[i-1][RLP_WIDTH-1];
+                  rlc_subarr[RLP_WIDTH-1] = product;
+
+              }
+              rlc_arr.push(rlc_subarr);
           }
-          }).flat_map(Vec::<u64>::from).collect(),
+          
+          let pad_rlc: Vec<u64> = rlc_arr.into_iter().flat_map(Vec::<u64>::from).collect();
+          println!("padd_rlc=> {:?}", pad_rlc);
+          pad_rlc
+
+          },
           None => todo!(),
         }; 
 
         for (i, v) in rlp_res.iter().enumerate() {
           trace.values[i] = F::from_canonical_u64(*v);
         } 
-
         println!("rlp_res=> {:?}", rlp_res);
         
         trace
@@ -156,7 +155,6 @@ match data.get(0)? {
       // let length = *b as usize - 0xc0;
       let mut remaining_data = &data[1..];
       let mut list = Vec::new();
-      // for _ in 0..length {
       while !remaining_data.is_empty() {
           let (value, new_remaining_data) = decode_rlp_internal(remaining_data)?;
           list.push(value);
@@ -166,7 +164,7 @@ match data.get(0)? {
   }
   b if *b <= 0xff => {
       // Long list
-      let length_bytes = *b as usize - 0xf7;
+      let length_bytes: usize = *b as usize - 0xf7;
       // let length = decode_length(&data[1..1 + length_bytes])?;
       let mut remaining_data = &data[1 + length_bytes..];
       let mut list = Vec::new();
@@ -196,8 +194,12 @@ fn decode_length(data: &[u8]) -> Option<usize> {
   }
 }
 
+pub fn bits2u64(power_bits: Vec<u64>) -> u64 {
+  let num: u64 = power_bits.iter().enumerate().map(|(i, &x)| x as u64 * (2 as u8).pow(i as u32) as u64).sum();
+  num
+}
 
-pub fn exp_by_squaring<AF: AbstractField>(val: AF, power_bits: Vec<AF>) -> AF {
+pub fn exp_u64_by_squaring<AF: AbstractField>(val: AF, power_bits: Vec<AF>) -> AF {
   let mut current = val;
   let mut product = AF::one();
   for j in power_bits.into_iter() {
@@ -214,55 +216,57 @@ impl<F> BaseAir<F> for RlpAir {
     }
 }
 
+pub fn exp_u64_field_by_squaring<AF: AbstractField>(val: AF, power: u64) -> AF {
+  let mut current = val;
+  let mut product = AF::one();
+
+  for j in 0..bits_u64(power) {
+      if (power >> j & 1) != 0 {
+          product *= current.clone();
+      }
+      current = current.square();
+  }
+  product
+}
+
+const fn bits_u64(n: u64) -> usize {
+  (64 - n.leading_zeros()) as usize
+}
+
+
 impl<AB: AirBuilder> Air<AB> for RlpAir {
     fn eval(&self, builder: &mut AB) {
-
 
         let main = builder.main();
         let local = main.row_slice(0);
         let next = main.row_slice(1);
+        let r = AB::Expr::from_canonical_u8(R);
 
+        let local_acc = local[RLP_WIDTH-1];
+        let local_len_bits = local[RLP_WIDTH..].to_vec().iter().map(|&x| x.into()).collect();
+        let next_acc = next[RLP_WIDTH-1];
 
+        let mut local_exp_sum = AB::Expr::zero();
+        for i in 0..RLP_WIDTH-1 {
+          local_exp_sum += local[i] * r.exp_u64(i as u64);
+        }
 
-        let power_bits = [AB::Expr::one(),AB::Expr::zero(),AB::Expr::zero(),AB::Expr::one(),AB::Expr::zero(),AB::Expr::zero(),AB::Expr::zero(),AB::Expr::zero()].to_vec();
-        let local_len_arr = local[RLP_WIDTH..].to_vec();
-        // let l = local_len_arr.into_iter().map(|x| {
-        //   AB::Expr::from_canonical_u8(8);
-        // }).collect_vec();
+        let mut next_exp_sum = AB::Expr::zero();
+        for i in 0..RLP_WIDTH-1 {
+          next_exp_sum += next[i] * r.exp_u64(i as u64);
+        }
 
-        // AB::Expr::from_canonical_u8(local_len_arr);
-        
-        let res = exp_by_squaring(AB::Expr::from_canonical_u8(R), power_bits);
-        println!("res: {:?}", res);
+        builder.when_first_row().assert_eq(local_exp_sum, local_acc);
 
-        let next_len = &next[RLP_WIDTH..];
+        let next_acc_p3: <AB as AirBuilder>::Expr = local_acc + next_exp_sum * exp_u64_by_squaring(AB::Expr::from_canonical_u8(R), local_len_bits);
+      
+        println!("next_acc: {:?}", next_acc.into());
+        println!("next_acc_p3: {:?}", next_acc_p3);
+        builder.when_transition().assert_eq(next_acc.into(), next_acc_p3);
 
-        // println!("Len: {:?}, {}", next_len, next_len);
-        println!("local: {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?}", local[0].into(),local[1].into(),local[2].into(),local[3].into(),local[4].into(),local[5].into(),local[6].into(),local[7].into(),local[8].into(),local[9].into(),local[10].into(),local[11].into(),local[12].into(),local[13].into(),local[14].into(),local[15].into());
-        println!("next: {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?}", next[0].into(),next[1].into(),next[2].into(),next[3].into(),next[4].into(),next[5].into(),next[6].into(),next[7].into(),next[8].into(),next[9].into(),next[10].into(),next[11].into(),next[12].into(),next[13].into(),next[14].into(),next[15].into());
-        println!("-------------------------------");
-
-        // let local_acc = local.last();
-        // let local_len = local[MAX_WIDTH-2];
-        // let next_acc = next.last();
-        // let next_len: <AB as AirBuilder>::Var = next[MAX_WIDTH-2];
-        
-        // let a = AB::F64::as_canonical_u64(next_len);
-        // let f = AB::Expr::as_canonical_u64(next_len);
-        // assert_eq!(f.as_canonical_u64(), 3);
-
-        // u64::from(next_len);
-
-        // let t =  exp_u64_by_squaring(AB::Expr::from_canonical_u8(R), next_len);
-        // let exp_u64 = next_len.into().exp_u64(2);
-        // println!("test: {:?}", test);
-        // let r = local_len.exp_power_of_2(R as usize);
-        // next_acc = next_rlc*R.pow(local_len as u32)
-        // let local_len = local[MAX_WIDTH-2];
-        // for i in 0..local_len {
-        //   local[i]
-        // }
-        // builder.when_transition()
+        // println!("local: {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?}", local[0].into(),local[1].into(),local[2].into(),local[3].into(),local[4].into(),local[5].into(),local[6].into(),local[7].into(),local[8].into(),local[9].into(),local[10].into(),local[11].into(),local[12].into(),local[13].into(),local[14].into(),local[15].into());
+        // println!("next: {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?}", next[0].into(),next[1].into(),next[2].into(),next[3].into(),next[4].into(),next[5].into(),next[6].into(),next[7].into(),next[8].into(),next[9].into(),next[10].into(),next[11].into(),next[12].into(),next[13].into(),next[14].into(),next[15].into());
+        // println!("-------------------------------");
     }
 }
 
@@ -305,11 +309,8 @@ fn main() -> Result<(), VerificationError> {
     let dft = Dft {};
 
     type Challenger = DuplexChallenger<Val, Perm, 16>;
-    // 201, 132, 97, 98, 99, 100, 131, 100, 101, 102
 
     let rlp_array = vec![201, 132, 97, 98, 99, 100, 131, 100, 101, 102];
-
-    println!("rlp_array: {:?}", rlp_array);
 
     let air = RlpAir { n: 12, rlp_array};
 
@@ -317,8 +318,8 @@ fn main() -> Result<(), VerificationError> {
     println!("trace: {:?}", trace);
 
     let fri_config = FriConfig {
-        log_blowup: 1,
-        num_queries: 100,
+        log_blowup: 4,
+        num_queries: 4,
         proof_of_work_bits: 16,
         mmcs: challenge_mmcs,
     };
