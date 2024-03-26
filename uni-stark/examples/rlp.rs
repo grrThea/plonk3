@@ -1,4 +1,3 @@
-use std::borrow::Borrow;
 use std::usize;
 use itertools::Itertools;
 use p3_baby_bear::{BabyBear, DiffusionMatrixBabybear};
@@ -60,6 +59,71 @@ const RLP_LENGTH:usize = 8;
 const RLP_WIDTH:usize = 8;
 const MAX_WIDTH:usize = RLP_WIDTH + RLP_LENGTH;
 
+  // outer
+  // cd 82 0acc   0b
+  // inner
+  // c5 83 012345 02
+  // c2 00 03     04
+
+  // outer
+  // cd 82 
+  // 0a cc  
+  // 0b
+  // inner
+  // c5 83 012345 02
+  // c2 00 03     04
+
+  // [205, 130, 10, 204, 11, 197, 131, 1, 35, 69, 2, 194, 3, 4]
+
+  // [205, 130, 10, 204, 11]
+  // [197, 131, 1, 35, 69, 2]
+  // [194, 3, 4]
+
+  fn decode_rlp(rlp_encoded: &[u8]) -> Vec<Vec<u8>> {
+    let mut decoded: Vec<Vec<u8>> = Vec::new();
+    let mut i = 0;
+
+    while i < rlp_encoded.len() {
+        if rlp_encoded[i] < 0xC0 {
+            // Single byte item
+            let item_length = rlp_encoded[i] as usize;
+            decoded.push(rlp_encoded[i..i + 1 + item_length].to_vec());
+            i += 1 + item_length;
+        } else if rlp_encoded[i] < 0xF8 {
+            // Short item
+            let item_length = (rlp_encoded[i] - 0xC0) as usize;
+            decoded.push(rlp_encoded[i..i + 1 + item_length].to_vec());
+            i += 1 + item_length;
+        } else {
+            // Long item
+            let length_length = (rlp_encoded[i] - 0xF7) as usize;
+            let item_length = rlp_encoded[i + 1..i + 1 + length_length]
+                .iter()
+                .fold(0, |acc, &byte| acc * 256 + byte as usize);
+            decoded.push(rlp_encoded[i..i + 1 + length_length + item_length].to_vec());
+            i += 1 + length_length + item_length;
+        }
+    }
+
+    decoded
+}
+
+
+impl RlpAir {
+  pub fn random_valid_trace2<F: PrimeField64>(&self) -> RowMajorMatrix<F>
+  {
+    // let rlp_values = decode_rlp_internal(&self.rlp_array).map(|(value, _)| value);
+
+    let rlp_encoded = vec![205, 130, 10, 204, 11, 197, 131, 1, 35, 69, 2, 194, 3, 4];
+    let decoded = decode_rlp(&rlp_encoded);
+
+    println!("rlp_values=> {:?}", decoded);
+
+
+    let trace = RowMajorMatrix::new(vec![F::zero(); MAX_WIDTH * 2], MAX_WIDTH);
+    trace
+  }
+}
 impl RlpAir {
     pub fn random_valid_trace<F: PrimeField64>(&self) -> RowMajorMatrix<F>
     {
@@ -310,11 +374,26 @@ fn main() -> Result<(), VerificationError> {
 
     type Challenger = DuplexChallenger<Val, Perm, 16>;
 
-    let rlp_array = vec![201, 132, 97, 98, 99, 100, 131, 100, 101, 102];
+    // let rlp_array = vec![201, 132, 97, 98, 99, 100, 131, 100, 101, 102];
+    // ["0x0acc", "0x0b", ["0x012345", "0x02"], ["0x03", "0x04"]]
+    // 0xcd820acc0bc58301234502c20304
+    // [205, 130, 10, 204, 11, 197, 131, 1, 35, 69, 2, 194, 3, 4]
 
-    let air = RlpAir { n: 12, rlp_array};
+    // outer
+    // cd 82 0acc   0b
+    // inner
+    // c5 83 012345 02
+    // c2 00 03     04
 
-    let trace = air.random_valid_trace();
+
+    let hex_string = "cd820acc0bc58301234502c20304"; 
+    let bytes = hex::decode(hex_string).unwrap(); 
+    println!("hex: {:?}", bytes);
+    
+    let air = RlpAir { n: 12, rlp_array: bytes};
+    
+
+    let trace = air.random_valid_trace2();
     println!("trace: {:?}", trace);
 
     let fri_config = FriConfig {
