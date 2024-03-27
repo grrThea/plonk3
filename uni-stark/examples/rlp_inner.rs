@@ -68,8 +68,8 @@ impl RlpAir {
     // 0xec820acc830bc503e4d183230a88c883230a8883650b3283650b32d182240bc984280a880b83650b3283350e30
     // ["0x0acc", "0x0bc503", [["0x230a88",["0x230a88", "0x650b32"], "0x650b32"], ["0x240b",["0x280a880b", "0x650b32"], "0x350e30"]]]
     // [236, 130, 10, 204, 131, 11, 197, 3, 228, 209, 131, 35, 10, 136, 200, 131, 35, 10, 136, 131, 101, 11, 50, 131, 101, 11, 50, 209, 130, 36, 11, 201, 132, 40, 10, 136, 11, 131, 101, 11, 50, 131, 53, 14, 48]
-    let rlp_values = decode_rlp_internal(&self.rlp_array).map(|(value, _)| value);
-    println!("rlp_values=> {:?}", rlp_values);
+    // let rlp_values = decode_rlp_internal(&self.rlp_array).map(|(value, _)| value);
+    // println!("rlp_values=> {:?}", rlp_values);
 
     // let rlp_res:Vec::<u64> = match rlp_values {
     //   Some(RlpValue::List(values)) => {
@@ -278,7 +278,7 @@ fn main() -> Result<(), VerificationError> {
     
     // let hex_string = "ec820acc830bc503e4d183230a88c883230a8883650b3283650b32d182240bc984280a880b83650b3283350e30";
 
-    let hex_string = "ec820acc830bc503e4d183230a88c883230a8883650b3283650b32d182240bc984280a880b83650b3283350e30";
+    let hex_string = "e90282ab34830c781ce0cf82c0afc782c0af83b2a10883b2a108cf82c0afc782c0af83b2a10883b2a108";
     // ec820acc830bc503 e4d183230a88c883230a8883650b3283650b32d182240bc984280a880b83650b3283350e30
     // ["0x0acc", "0x0bc503", [["0x230a88",["0x230a88", "0x650b32"], "0x650b32"], ["0x240b",["0x280a880b", "0x650b32"], "0x350e30"]]]
     // [236, 130, 10, 204, 131, 11, 197, 3, 228, 209, 131, 35, 10, 136, 200, 131, 35, 10, 136, 131, 101, 11, 50, 131, 101, 11, 50, 209, 130, 36, 11, 201, 132, 40, 10, 136, 11, 131, 101, 11, 50, 131, 53, 14, 48]
