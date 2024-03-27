@@ -59,148 +59,39 @@ const RLP_LENGTH:usize = 8;
 const RLP_WIDTH:usize = 8;
 const MAX_WIDTH:usize = RLP_WIDTH + RLP_LENGTH;
 
-  // outer
-  // cd 82 0acc   0b
-  // inner
-  // c5 83 012345 02
-  // c2 00 03     04
-
-  // outer
-  // cd 82 
-  // 0a cc  
-  // 0b
-  // inner
-  // c5 83 012345 02
-  // c2 00 03     04
-
-  // [205, 130, 10, 204, 11, 197, 131, 1, 35, 69, 2, 194, 3, 4]
-
-  // [205, 130, 10, 204, 11]
-  // [197, 131, 1, 35, 69, 2]
-  // [194, 3, 4]
-
-  fn decode_rlp(rlp_encoded: &[u8]) -> Vec<Vec<u8>> {
-    let mut decoded: Vec<Vec<u8>> = Vec::new();
-    let mut i = 0;
-
-    while i < rlp_encoded.len() {
-        if rlp_encoded[i] < 0xC0 {
-            // Single byte item
-            let item_length = rlp_encoded[i] as usize;
-            decoded.push(rlp_encoded[i..i + 1 + item_length].to_vec());
-            i += 1 + item_length;
-        } else if rlp_encoded[i] < 0xF8 {
-            // Short item
-            let item_length = (rlp_encoded[i] - 0xC0) as usize;
-            decoded.push(rlp_encoded[i..i + 1 + item_length].to_vec());
-            i += 1 + item_length;
-        } else {
-            // Long item
-            let length_length = (rlp_encoded[i] - 0xF7) as usize;
-            let item_length = rlp_encoded[i + 1..i + 1 + length_length]
-                .iter()
-                .fold(0, |acc, &byte| acc * 256 + byte as usize);
-            decoded.push(rlp_encoded[i..i + 1 + length_length + item_length].to_vec());
-            i += 1 + length_length + item_length;
-        }
-    }
-
-    decoded
-}
-
-
+// outer trace fiels: list prefix(1), list items length(3), item1 
+// inner trace fiels: 
 impl RlpAir {
-  pub fn random_valid_trace2<F: PrimeField64>(&self) -> RowMajorMatrix<F>
+  pub fn random_valid_trace<F: PrimeField64>(&self) -> RowMajorMatrix<F>
   {
-    // let rlp_encoded = vec![205, 130, 10, 204, 11, 197, 131, 1, 35, 69, 2, 194, 3, 4];
-    // let decoded = decode_rlp(&rlp_encoded);
 
-    let a = "ec820acc830bc503e4d183230a88c883230a8883650b3283650b32d182240bc984280a880b83650b3283350e30";
-    let b = hex::decode(a).unwrap();
-    // let hex_string = "cd820acc0bc58301234502c20304"; 
-    // let bytes = hex::decode(hex_string).unwrap(); 
-    println!("bbb=> {:?}", b);
-
-    let rlp_values = decode_rlp_internal(&b).map(|(value, _)| value);
-
-
+    // 0xec820acc830bc503e4d183230a88c883230a8883650b3283650b32d182240bc984280a880b83650b3283350e30
+    // ["0x0acc", "0x0bc503", [["0x230a88",["0x230a88", "0x650b32"], "0x650b32"], ["0x240b",["0x280a880b", "0x650b32"], "0x350e30"]]]
+    // [236, 130, 10, 204, 131, 11, 197, 3, 228, 209, 131, 35, 10, 136, 200, 131, 35, 10, 136, 131, 101, 11, 50, 131, 101, 11, 50, 209, 130, 36, 11, 201, 132, 40, 10, 136, 11, 131, 101, 11, 50, 131, 53, 14, 48]
+    let rlp_values = decode_rlp_internal(&self.rlp_array).map(|(value, _)| value);
     println!("rlp_values=> {:?}", rlp_values);
 
+    // let rlp_res:Vec::<u64> = match rlp_values {
+    //   Some(RlpValue::List(values)) => {
+    //     let rlp_arr = values.into_iter().map(|value| {
+    //       match value {
+    //         // RlpValue::String(data) => {},
+    //         RlpValue::List(data) => {
+              
+    //         },
+    //         _ => todo!(),
+    //       }
+    //     });
+    //     vec![]
+    //   },
+    //   _ => todo!(),
+    // };
 
+    
     let trace = RowMajorMatrix::new(vec![F::zero(); MAX_WIDTH * 2], MAX_WIDTH);
     trace
   }
-}
-impl RlpAir {
-    pub fn random_valid_trace<F: PrimeField64>(&self) -> RowMajorMatrix<F>
-    {
        
-        let rlp_values = decode_rlp_internal(&self.rlp_array).map(|(value, _)| value);
-        let mut trace = RowMajorMatrix::new(vec![F::zero(); MAX_WIDTH * 2], MAX_WIDTH);
-        
-        let rlp_res:Vec::<u64> = match rlp_values {
-          Some(RlpValue::String(bytes)) => bytes.into_iter().map(|&x| x as u64).collect(),
-          Some(RlpValue::List(bytes)) => {
-            let rlp_arr:Vec<Vec<u8>> = bytes.into_iter().map(|rlp_value| {
-              match rlp_value {
-                RlpValue::String(data) => {
-                  let mut len = data.len() as u8;
-                  let mut res:Vec<u8> = Vec::new();
-                  res = data.iter().map(|&x|x).collect();
-                  if res.len() < RLP_WIDTH {
-                    res.resize(RLP_WIDTH, 0);
-                  }
-                  let mut binary_len: Vec<u8> = Vec::new();
-                  while len > 0 {
-                    binary_len.push(len % 2);
-                    len /= 2;
-                  }
-                  if binary_len.len() < RLP_LENGTH {
-                    binary_len.resize(RLP_LENGTH, 0);
-                  }
-
-                  res.extend(binary_len);
-                  res
-                },
-                _ => todo!()
-            }}).collect_vec();
-
-            let mut rlc_arr: Vec<Vec<u64>> = Vec::new();
-            for i in 0..rlp_arr.len() {
-              
-              let rlp = rlp_arr[i][0..RLP_WIDTH-1].to_vec();
-              let rlc: u64 = rlp.iter().enumerate().map(|(i, &x)| x as u64 * R.pow(i as u32) as u64).sum();
-
-              let mut rlc_subarr: Vec<u64> = Vec::new();
-              rlc_subarr.extend(rlp_arr[i].iter().map(|&x| x as u64));
-
-              if i == 0 {
-                rlc_subarr[RLP_WIDTH-1] = rlc;
-              } else {
-                  let real_len = bits2u64(rlc_arr[i-1][RLP_WIDTH..].to_vec());
-                  let m = R.pow(real_len as u32) as u64;
-                  let product = rlc * m + rlc_arr[i-1][RLP_WIDTH-1];
-                  rlc_subarr[RLP_WIDTH-1] = product;
-
-              }
-              rlc_arr.push(rlc_subarr);
-          }
-          
-          let pad_rlc: Vec<u64> = rlc_arr.into_iter().flat_map(Vec::<u64>::from).collect();
-          println!("padd_rlc=> {:?}", pad_rlc);
-          pad_rlc
-
-          },
-          None => todo!(),
-        }; 
-
-        for (i, v) in rlp_res.iter().enumerate() {
-          trace.values[i] = F::from_canonical_u64(*v);
-        } 
-        println!("rlp_res=> {:?}", rlp_res);
-        
-        trace
-    }
 }
 
 fn decode_rlp_internal(data: &[u8]) -> Option<(RlpValue, &[u8])> {
@@ -314,29 +205,29 @@ impl<AB: AirBuilder> Air<AB> for RlpAir {
         let main = builder.main();
         let local = main.row_slice(0);
         let next = main.row_slice(1);
-        let r = AB::Expr::from_canonical_u8(R);
+        // let r = AB::Expr::from_canonical_u8(R);
 
-        let local_acc = local[RLP_WIDTH-1];
-        let local_len_bits = local[RLP_WIDTH..].to_vec().iter().map(|&x| x.into()).collect();
-        let next_acc = next[RLP_WIDTH-1];
+        // let local_acc = local[RLP_WIDTH-1];
+        // let local_len_bits = local[RLP_WIDTH..].to_vec().iter().map(|&x| x.into()).collect();
+        // let next_acc = next[RLP_WIDTH-1];
 
-        let mut local_exp_sum = AB::Expr::zero();
-        for i in 0..RLP_WIDTH-1 {
-          local_exp_sum += local[i] * r.exp_u64(i as u64);
-        }
+        // let mut local_exp_sum = AB::Expr::zero();
+        // for i in 0..RLP_WIDTH-1 {
+        //   local_exp_sum += local[i] * r.exp_u64(i as u64);
+        // }
 
-        let mut next_exp_sum = AB::Expr::zero();
-        for i in 0..RLP_WIDTH-1 {
-          next_exp_sum += next[i] * r.exp_u64(i as u64);
-        }
+        // let mut next_exp_sum = AB::Expr::zero();
+        // for i in 0..RLP_WIDTH-1 {
+        //   next_exp_sum += next[i] * r.exp_u64(i as u64);
+        // }
 
-        builder.when_first_row().assert_eq(local_exp_sum, local_acc);
+        // builder.when_first_row().assert_eq(local_exp_sum, local_acc);
 
-        let next_acc_p3: <AB as AirBuilder>::Expr = local_acc + next_exp_sum * exp_u64_by_squaring(AB::Expr::from_canonical_u8(R), local_len_bits);
+        // let next_acc_p3: <AB as AirBuilder>::Expr = local_acc + next_exp_sum * exp_u64_by_squaring(AB::Expr::from_canonical_u8(R), local_len_bits);
       
-        println!("next_acc: {:?}", next_acc.into());
-        println!("next_acc_p3: {:?}", next_acc_p3);
-        builder.when_transition().assert_eq(next_acc.into(), next_acc_p3);
+        // println!("next_acc: {:?}", next_acc.into());
+        // println!("next_acc_p3: {:?}", next_acc_p3);
+        // builder.when_transition().assert_eq(next_acc.into(), next_acc_p3);
 
         // println!("local: {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?}", local[0].into(),local[1].into(),local[2].into(),local[3].into(),local[4].into(),local[5].into(),local[6].into(),local[7].into(),local[8].into(),local[9].into(),local[10].into(),local[11].into(),local[12].into(),local[13].into(),local[14].into(),local[15].into());
         // println!("next: {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?}", next[0].into(),next[1].into(),next[2].into(),next[3].into(),next[4].into(),next[5].into(),next[6].into(),next[7].into(),next[8].into(),next[9].into(),next[10].into(),next[11].into(),next[12].into(),next[13].into(),next[14].into(),next[15].into());
@@ -383,27 +274,21 @@ fn main() -> Result<(), VerificationError> {
     let dft = Dft {};
 
     type Challenger = DuplexChallenger<Val, Perm, 16>;
-
-    // let rlp_array = vec![201, 132, 97, 98, 99, 100, 131, 100, 101, 102];
-    // ["0x0acc", "0x0b", ["0x012345", "0x02"], ["0x03", "0x04"]]
-    // 0xcd820acc0bc58301234502c20304
-    // [205, 130, 10, 204, 11, 197, 131, 1, 35, 69, 2, 194, 3, 4]
-
-    // outer
-    // cd 82 0acc   0b
-    // inner
-    // c5 83 012345 02
-    // c2 00 03     04
-
-
-    let hex_string = "cd820acc0bc58301234502c20304"; 
-    let bytes = hex::decode(hex_string).unwrap(); 
-    println!("hex: {:?}", bytes);
     
-    let air = RlpAir { n: 12, rlp_array: bytes};
     
+    // let hex_string = "ec820acc830bc503e4d183230a88c883230a8883650b3283650b32d182240bc984280a880b83650b3283350e30";
 
-    let trace = air.random_valid_trace2();
+    let hex_string = "ec820acc830bc503e4d183230a88c883230a8883650b3283650b32d182240bc984280a880b83650b3283350e30";
+    // ec820acc830bc503 e4d183230a88c883230a8883650b3283650b32d182240bc984280a880b83650b3283350e30
+    // ["0x0acc", "0x0bc503", [["0x230a88",["0x230a88", "0x650b32"], "0x650b32"], ["0x240b",["0x280a880b", "0x650b32"], "0x350e30"]]]
+    // [236, 130, 10, 204, 131, 11, 197, 3, 228, 209, 131, 35, 10, 136, 200, 131, 35, 10, 136, 131, 101, 11, 50, 131, 101, 11, 50, 209, 130, 36, 11, 201, 132, 40, 10, 136, 11, 131, 101, 11, 50, 131, 53, 14, 48]
+    let rlp_array = hex::decode(hex_string).unwrap();
+
+    println!("rlp_array: {:?}", rlp_array);
+
+    let air = RlpAir { n: 12, rlp_array};
+
+    let trace = air.random_valid_trace();
     println!("trace: {:?}", trace);
 
     let fri_config = FriConfig {
