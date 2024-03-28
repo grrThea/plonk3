@@ -273,6 +273,16 @@ pub fn bits2u64(power_bits: Vec<u64>) -> u64 {
   num
 }
 
+pub fn u642bits(len: u8) -> Vec<u8> {
+  let mut l = len;
+  let mut binary_len: Vec<u8> = Vec::new();
+  while l > 0 {
+    binary_len.push(len % 2);
+    l /= 2;
+  }
+  binary_len
+}
+
 pub fn exp_u64_by_squaring<AF: AbstractField>(val: AF, power_bits: Vec<AF>) -> AF {
   let mut current = val;
   let mut product = AF::one();

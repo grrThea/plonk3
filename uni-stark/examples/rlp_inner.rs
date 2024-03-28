@@ -1,12 +1,11 @@
 use std::usize;
-use itertools::Itertools;
 use p3_baby_bear::{BabyBear, DiffusionMatrixBabybear};
 use p3_air::{Air, AirBuilder, BaseAir};
 use p3_challenger::DuplexChallenger;
 use p3_matrix::dense::RowMajorMatrix;
 use p3_dft::Radix2DitParallel;
 use p3_field::extension::BinomialExtensionField;
-use p3_field::{AbstractField, Field, PrimeField64};
+use p3_field::{AbstractField, Field, PrimeField32, PrimeField64};
 use p3_matrix::{Matrix, MatrixRowSlices};
 use p3_poseidon2::Poseidon2;
 use p3_uni_stark::{prove, verify, StarkConfig, VerificationError};
@@ -24,7 +23,7 @@ use p3_util::log2_ceil_usize;
 
 pub struct RlpAir {
   n: u64,
-  rlp_array: Vec<u8>,
+  rlp_array: Vec<u64>,
 }
 
 impl Default for RlpAir {
@@ -55,113 +54,69 @@ impl<'a> From<RlpValue<'a>> for Vec<u8> {
 }
 
 const R:u8 = 2;
-const RLP_LENGTH:usize = 8;
-const RLP_WIDTH:usize = 8;
-const MAX_WIDTH:usize = RLP_WIDTH + RLP_LENGTH;
 
-// outer trace fiels: list prefix(1), list items length(3), item1 
-// inner trace fiels: 
+const PREFIX_NUM:usize = 1;
+const LEN_NUM:usize = 3;
+const ITEM1_PREFIX_NUM:usize = 1;
+const ITEM1_LEN_NUM:usize = 3;
+const ITEM1_NUM:usize = 4;
+const LOGS_RLP_NUM:usize = 10;
+const ITEM2_PREFIX_NUM:usize = 1;
+const ITEM2_LEN_NUM:usize = 3;
+const ITEM2_NUM:usize = 4;
+const FIELD_NUM_ARRAY: [usize; 9] = [PREFIX_NUM, LEN_NUM, ITEM1_PREFIX_NUM, ITEM1_LEN_NUM, ITEM1_NUM, LOGS_RLP_NUM, ITEM2_PREFIX_NUM, ITEM2_LEN_NUM, ITEM2_NUM];
+
+const RLP_FIELD_LEN_NUM:usize = 9;
+const RLP_FIELD_NUM: usize = PREFIX_NUM + LEN_NUM + ITEM1_PREFIX_NUM + ITEM1_LEN_NUM + ITEM1_NUM + LOGS_RLP_NUM + ITEM2_PREFIX_NUM + ITEM2_LEN_NUM + ITEM2_NUM;
+const TOTAL_FIELD_NUM: usize = RLP_FIELD_NUM + RLP_FIELD_LEN_NUM * 8 + 8 + 1;
+
+// trace field * 20:
+// l1_prefix(1), l1_len(3), item1_prefix(1), item1_len(3), item1(4), logs_rlp(10), item2_prefix(1), item2_len(3), item2(4), 
+// len(l1_prefix)(1), len(l1_len)(1), len(item1_prefix)(1), len(item1_len)(1), len(item1)(1), len(logs_rlp)(1), len(item2_prefix)(1), len(item2_len)(1), len(item2)(1), total_real_len(1), acc(1)
 impl RlpAir {
   pub fn random_valid_trace<F: PrimeField64>(&self) -> RowMajorMatrix<F>
   {
 
-    // 0xec820acc830bc503e4d183230a88c883230a8883650b3283650b32d182240bc984280a880b83650b3283350e30
-    // ["0x0acc", "0x0bc503", [["0x230a88",["0x230a88", "0x650b32"], "0x650b32"], ["0x240b",["0x280a880b", "0x650b32"], "0x350e30"]]]
-    // [236, 130, 10, 204, 131, 11, 197, 3, 228, 209, 131, 35, 10, 136, 200, 131, 35, 10, 136, 131, 101, 11, 50, 131, 101, 11, 50, 209, 130, 36, 11, 201, 132, 40, 10, 136, 11, 131, 101, 11, 50, 131, 53, 14, 48]
-    // let rlp_values = decode_rlp_internal(&self.rlp_array).map(|(value, _)| value);
-    // println!("rlp_values=> {:?}", rlp_values);
+    let data:Vec<u64> = vec![
+      207, 0, 0, 0, 130, 0, 0, 0, 192, 175, 0, 0, 199, 130, 192, 175, 131, 178, 161, 8, 0, 0, 131, 0, 0, 0, 178, 161, 8, 0, 0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,1,0,0,0,343767075299,
+      207, 0, 0, 0, 130, 0, 0, 0, 192, 175, 0, 0, 199, 130, 192, 175, 131, 178, 161, 8, 0, 0, 131, 0, 0, 0, 178, 161, 8, 0, 0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,1,0,0,0,10635747,
+      224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,1, 145133,
+    ];
 
-    // let rlp_res:Vec::<u64> = match rlp_values {
-    //   Some(RlpValue::List(values)) => {
-    //     let rlp_arr = values.into_iter().map(|value| {
-    //       match value {
-    //         // RlpValue::String(data) => {},
-    //         RlpValue::List(data) => {
-              
-    //         },
-    //         _ => todo!(),
-    //       }
-    //     });
-    //     vec![]
-    //   },
-    //   _ => todo!(),
-    // };
-
+    // let data: Vec<u64> = vec![
+    //   207, 0, 0, 0, 130, 0, 0, 0, 192, 175, 0, 0, 199, 130, 192, 175, 131, 178, 161, 8, 0, 0, 131, 0, 0, 0, 178, 161, 8, 0, 1, 0, 1, 0, 2, 8, 1, 0, 3, 16, 343767075299,
+    //   207, 0, 0, 0, 130, 0, 0, 0, 192, 175, 0, 0, 199, 130, 192, 175, 131, 178, 161, 8, 0, 0, 131, 0, 0, 0, 178, 161, 8, 0, 1, 0, 1, 0, 2, 8, 1, 0, 3, 16, 10635747,
+    //   224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 145133,
+    // ];
     
-    let trace = RowMajorMatrix::new(vec![F::zero(); MAX_WIDTH * 2], MAX_WIDTH);
+    // let data: Vec<u64> = vec![207, 0, 0, 0, 130, 0, 0, 0, 0, 0, 192, 175, 0, 0, 199, 130, 192, 175, 131, 178, 161, 8, 131, 0, 0, 0, 0, 178, 161, 8, 1, 0, 1, 0, 2, 8, 1, 0, 3, 16, 343767075299,
+    // 207, 0, 0, 0, 130, 0, 0, 0, 0, 0, 192, 175, 0, 0, 199, 130, 192, 175, 131, 178, 161, 8, 131, 0, 0, 0, 0, 178, 161, 8, 1, 0, 1, 0, 2, 8, 1, 0, 3, 16, 10635747,
+    // 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 145133];
+
+    let mut trace = RowMajorMatrix::new(vec![F::zero(); TOTAL_FIELD_NUM * 4], TOTAL_FIELD_NUM);
+
+    for (i, v) in data.iter().enumerate() {
+      trace.values[i] = F::from_wrapped_u64(*v);
+    } 
+
     trace
-  }
-       
+  }     
 }
 
-fn decode_rlp_internal(data: &[u8]) -> Option<(RlpValue, &[u8])> {
-match data.get(0)? {
-    b if *b <= 0x7f => {
-      Some((RlpValue::String(&data[0..1]), &data[1..]))
-    }
-    b if *b <= 0xb7 => {
-      // Short string
-      let length = *b as usize - 0x80;
-      // let value = &data[1..1 + length];
-      let value = &data[0..1 + length];
-      Some((RlpValue::String(value), &data[1 + length..]))
-    }
-    b if *b <= 0xbf => {
-      // Long string
-      let length_bytes = *b as usize - 0xb7;
-      let length = decode_length(&data[1..1 + length_bytes])?;
-      // let value = &data[1 + length_bytes..1 + length_bytes + length];
-      let value = &data[0..1 + length_bytes + length];
-      Some((RlpValue::String(value), &data[1 + length_bytes + length..]))
-    }
-    b if *b <= 0xf7 => {
-      // Short list
-      let mut remaining_data = &data[1..];
-      let mut list = Vec::new();
-      list.push(RlpValue::String(&data[0..1]));
-      while !remaining_data.is_empty() {
-          let (value, new_remaining_data) = decode_rlp_internal(remaining_data)?;
-          list.push(value);
-          remaining_data = new_remaining_data;
-      }
-      Some((RlpValue::List(list), remaining_data))
-  }
-  b if *b <= 0xff => {
-      // Long list
-      let length_bytes: usize = *b as usize - 0xf7;
-      // let length = decode_length(&data[1..1 + length_bytes])?;
-      let mut remaining_data = &data[1 + length_bytes..];
-      let mut list = Vec::new();
-      list.push(RlpValue::String(&data[0..1 + length_bytes]));
-      while !remaining_data.is_empty() {
-          let (value, new_remaining_data) = decode_rlp_internal(remaining_data)?;
-          list.push(value);
-          remaining_data = new_remaining_data;
-      }
-      Some((RlpValue::List(list), remaining_data))
-  }
-    _ => None,
-  }
-}
-
-fn decode_length(data: &[u8]) -> Option<usize> {
-  match data.len() {
-      0 => None,
-      1 => Some(data[0] as usize),
-      _ => {
-          let length_bytes = data[0] as usize;
-          let mut length = 0;
-          for i in 1..=length_bytes {
-              length |= (data[i] as usize) << ((length_bytes - i) * 8);
-          }
-          Some(length)
-      }
-  }
-}
 
 pub fn bits2u64(power_bits: Vec<u64>) -> u64 {
   let num: u64 = power_bits.iter().enumerate().map(|(i, &x)| x as u64 * (2 as u8).pow(i as u32) as u64).sum();
   num
+}
+
+pub fn u642bits(len: u8) -> Vec<u8> {
+  let mut l = len;
+  let mut binary_len: Vec<u8> = Vec::new();
+  while l > 0 {
+    binary_len.push(len % 2);
+    l /= 2;
+  }
+  binary_len
 }
 
 pub fn exp_u64_by_squaring<AF: AbstractField>(val: AF, power_bits: Vec<AF>) -> AF {
@@ -175,9 +130,13 @@ pub fn exp_u64_by_squaring<AF: AbstractField>(val: AF, power_bits: Vec<AF>) -> A
   product
 }
 
+pub fn to_bn<AF: PrimeField64>(val: AF) -> AF {
+  val.as_canonical_u64()
+}
+
 impl<F> BaseAir<F> for RlpAir {
     fn width(&self) -> usize {
-      MAX_WIDTH
+      TOTAL_FIELD_NUM
     }
 }
 
@@ -199,20 +158,63 @@ const fn bits_u64(n: u64) -> usize {
 }
 
 
+
 impl<AB: AirBuilder> Air<AB> for RlpAir {
     fn eval(&self, builder: &mut AB) {
 
         let main = builder.main();
         let local = main.row_slice(0);
         let next = main.row_slice(1);
-        // let r = AB::Expr::from_canonical_u8(R);
+        let r = AB::Expr::from_canonical_u8(R);
+        
+        let local_acc = local[TOTAL_FIELD_NUM-1];
+        let next_acc = next[TOTAL_FIELD_NUM-1];
 
-        // let local_acc = local[RLP_WIDTH-1];
-        // let local_len_bits = local[RLP_WIDTH..].to_vec().iter().map(|&x| x.into()).collect();
-        // let next_acc = next[RLP_WIDTH-1];
+        // l1_prefix(1), l1_len(3), item1_prefix(1), item1_len(3), item1(4), logs_rlp(10), item2_prefix(1), item2_len(3), item2(4), 
+        // len(l1_prefix)(1), len(l1_len)(1), len(item1_prefix)(1), len(item1_len)(1), len(item1)(1), len(logs_rlp)(1), len(item2_prefix)(1), len(item2_len)(1), len(item2)(1), total_real_len(1), acc(1)
+        // 207, 0, 0, 0, 130, 0, 0, 0, 0, 0, 192, 175, 0, 0, 199, 130, 192, 175, 131, 178, 161, 8, 131, 0, 0, 0, 0, 178, 161, 8, 1, 0, 1, 0, 2, 8, 1, 0, 3, 16, 343767075299,
+        let mut rlp_arr= vec![AB::Expr::zero(); RLP_FIELD_NUM];
+        for i in 0..RLP_FIELD_NUM {
+          rlp_arr[i] = local[i].into();
+        }
+        // println!("rlp_arr: {:?}", rlp_arr);
+
+        let mut rlp_len_arr: Vec<<AB as AirBuilder>::Expr> = vec![];
+        for i in RLP_FIELD_NUM..RLP_FIELD_NUM + RLP_FIELD_LEN_NUM * 8 {
+          rlp_len_arr.push(local[i].into());
+        }
+        let nested_vec: Vec<Vec<<AB as AirBuilder>::Expr>> = rlp_len_arr.chunks(8).map(|chunk| chunk.to_vec()).collect();
+        // println!("nested_vec: {:?} {:?}", nested_vec.len(), nested_vec);
+
+
+        // let next_acc_p3: <AB as AirBuilder>::Expr = local_acc + next_exp_sum * exp_u64_by_squaring(AB::Expr::from_canonical_u8(R), local_len_bits);
+        let mut acc_p3 = AB::Expr::zero();
+        let mut real_len = AB::Expr::zero();
+        let mut idx = 0;
+        for (i, len) in FIELD_NUM_ARRAY.iter().enumerate() {
+          let mut real_len_bits = nested_vec[i].clone();
+          let data = rlp_arr[idx..idx + len].to_vec();
+      
+          let mut rlc = AB::Expr::zero();
+          for (i, d) in data.iter().enumerate() {
+            rlc += d.clone() * r.exp_u64(i as u64);
+          }
+          // println!("rlc: {:?}", rlc);
+          let acc = acc_p3.clone() + rlc * exp_u64_by_squaring(AB::Expr::from_canonical_u8(R), real_len_bits.clone());
+          acc_p3 += acc;
+          
+          // println!("real_len data: {:?} {:?}", real_len_bits, data);
+          idx+=len;
+        }
+
+      
+        println!("acc_p3: {:?}", acc_p3);
+        
+        let a = to_bn(AB::Expr::from_canonical_u8(R));
+        println!("a=> {:?}", a);
 
         // let mut local_exp_sum = AB::Expr::zero();
-        // for i in 0..RLP_WIDTH-1 {
+        // for i in 0..TOTAL_FIELD_NUM-1 {
         //   local_exp_sum += local[i] * r.exp_u64(i as u64);
         // }
 
@@ -276,19 +278,49 @@ fn main() -> Result<(), VerificationError> {
     type Challenger = DuplexChallenger<Val, Perm, 16>;
     
     
-    // let hex_string = "ec820acc830bc503e4d183230a88c883230a8883650b3283650b32d182240bc984280a880b83650b3283350e30";
-
+    //rlp: 0xe90282ab34830c781ce0cf82c0afc782c0af83b2a10883b2a108cf82c0afc782c0af83b2a10883b2a108
+    //inner: 0xe0cf82c0afc782c0af83b2a10883b2a108cf82c0afc782c0af83b2a10883b2a108
+    //inner: [224, 207, 130, 192, 175, 199, 130, 192, 175, 131, 178, 161, 8, 131, 178, 161, 8, 207, 130, 192, 175, 199, 130, 192, 175, 131, 178, 161, 8, 131, 178, 161, 8]
     let hex_string = "e90282ab34830c781ce0cf82c0afc782c0af83b2a10883b2a108cf82c0afc782c0af83b2a10883b2a108";
-    // ec820acc830bc503 e4d183230a88c883230a8883650b3283650b32d182240bc984280a880b83650b3283350e30
-    // ["0x0acc", "0x0bc503", [["0x230a88",["0x230a88", "0x650b32"], "0x650b32"], ["0x240b",["0x280a880b", "0x650b32"], "0x350e30"]]]
-    // [236, 130, 10, 204, 131, 11, 197, 3, 228, 209, 131, 35, 10, 136, 200, 131, 35, 10, 136, 131, 101, 11, 50, 131, 101, 11, 50, 209, 130, 36, 11, 201, 132, 40, 10, 136, 11, 131, 101, 11, 50, 131, 53, 14, 48]
-    let rlp_array = hex::decode(hex_string).unwrap();
+    let hex_bytes = hex::decode(hex_string).unwrap();
 
-    println!("rlp_array: {:?}", rlp_array);
+    println!("hex_bytes: {:?}", hex_bytes);
+
+    // let hex_string = "e90282ab34830c781ce0cf82c0afc782c0af83b2a10883b2a108cf82c0afc782c0af83b2a10883b2a108";
+
+    // let rlp_array = hex::decode(hex_string).unwrap();
+
+    // 1,              0,              1,              0,              2,              8,              1,              0,              3
+    // 0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1
+    // 1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,1,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,1,1,0,0,0,0,0,0
+    // let rlp_array:Vec<u64> = vec![
+    //   207, 0, 0, 0, 130, 0, 0, 0, 192, 175, 0, 0, 199, 130, 192, 175, 131, 178, 161, 8, 0, 0, 131, 0, 0, 0, 178, 161, 8, 0, 1, 0, 1, 0, 2, 8, 1, 0, 3, 16, 343767075299,
+    //   207, 0, 0, 0, 130, 0, 0, 0, 192, 175, 0, 0, 199, 130, 192, 175, 131, 178, 161, 8, 0, 0, 131, 0, 0, 0, 178, 161, 8, 0, 1, 0, 1, 0, 2, 8, 1, 0, 3, 16, 10635747,
+    //   224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 145133,
+    // ];
+    // let rlp_array:Vec<u64> = vec![
+    //   207, 0, 0, 0, 130, 0, 0, 0, 192, 175, 0, 0, 199, 130, 192, 175, 131, 178, 161, 8, 0, 0, 131, 0, 0, 0, 178, 161, 8, 0, 0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,1,0,0,0,343767075299,
+    //   207, 0, 0, 0, 130, 0, 0, 0, 192, 175, 0, 0, 199, 130, 192, 175, 131, 178, 161, 8, 0, 0, 131, 0, 0, 0, 178, 161, 8, 0, 0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,1,0,0,0,10635747,
+    //   224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,1, 145133,
+    // ];
+
+    let rlp_array:Vec<u64> = vec![
+      207, 0, 0, 0, 130, 0, 0, 0, 192, 175, 0, 0, 199, 130, 192, 175, 131, 178, 161, 8, 0, 0, 131, 0, 0, 0, 178, 161, 8, 0, 0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,1,0,0,0,343767075299,
+      207, 0, 0, 0, 130, 0, 0, 0, 192, 175, 0, 0, 199, 130, 192, 175, 131, 178, 161, 8, 0, 0, 131, 0, 0, 0, 178, 161, 8, 0, 0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,1,0,0,0,10635747,
+      224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,1, 145133,
+    ];
+
+
+    // let rlp_array = vec![
+    //   [224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 224],
+    //   [207, 130, 192, 175, 199, 130, 192, 175, 131, 178, 161, 8, 131, 178, 161, 8, 5245307], 
+    //   [207, 130, 192, 175, 199, 130, 192, 175, 131, 178, 161, 8, 131, 178, 161, 8, 5245307],
+    // ];
+    // println!("rlp_array: {:?}", rlp_array);
 
     let air = RlpAir { n: 12, rlp_array};
 
-    let trace = air.random_valid_trace();
+    let trace = air.random_valid_trace::<Val>();
     println!("trace: {:?}", trace);
 
     let fri_config = FriConfig {

@@ -1,4 +1,4 @@
-use core::ops::{Add, Mul, Shr, ShrAssign, Sub};
+use core::ops::{Add, Div, Mul, Shr, ShrAssign, Sub};
 
 use p3_field::{AbstractExtensionField, AbstractField, ExtensionField, Field, PrimeField64, PrimeField};
 use p3_matrix::dense::RowMajorMatrix;
@@ -22,6 +22,8 @@ pub trait Air<AB: AirBuilder>: BaseAir<AB::F> {
 pub trait AirBuilder: Sized {
     type F: Field;
 
+    type F64: PrimeField64;
+
     type Expr: AbstractField
         + From<Self::F>
         + Add<Self::Var, Output = Self::Expr>
@@ -30,6 +32,7 @@ pub trait AirBuilder: Sized {
         + Sub<Self::F, Output = Self::Expr>
         + Mul<Self::Var, Output = Self::Expr>
         + Mul<Self::F, Output = Self::Expr>;
+       
         
 
 
@@ -162,6 +165,7 @@ impl<'a, AB: AirBuilder> AirBuilder for FilteredAirBuilder<'a, AB> {
     type Expr = AB::Expr;
     type Var = AB::Var;
     type M = AB::M;
+    type F64 = AB::F64;
 
     fn main(&self) -> Self::M {
         self.inner.main()

@@ -27,7 +27,6 @@ impl<AB: AirBuilder> Air<AB> for KeccakAir {
         let local: &KeccakCols<AB::Var> = main.row_slice(0).borrow();
         let next: &KeccakCols<AB::Var> = main.row_slice(1).borrow();
 
-
         // The export flag must be 0 or 1.
         builder.assert_bool(local.export);
 
